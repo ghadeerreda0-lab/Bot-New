@@ -1,0 +1,44 @@
+# ملفات البيئة
+.env
+.env.local
+
+# قاعدة البيانات
+*.sqlite
+*.db
+
+# السجلات
+*.log
+logs/
+
+# بيئة Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# نظام التشغيل
+.DS_Store
+Thumbs.db
