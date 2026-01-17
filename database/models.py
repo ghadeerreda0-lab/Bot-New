@@ -1,138 +1,170 @@
 """
-تعريف نماذج الجداول في قاعدة البيانات
+نماذج قاعدة البيانات
 """
+from datetime import datetime
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, JSON, BigInteger
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from config import Config
 
-class User:
-    """نموذج المستخدم"""
-    
-    def __init__(self, user_id, balance=0, created_at=None, last_active=None,
-                 referral_code=None, referred_by=None, is_banned=False,
-                 ban_reason=None, ban_until=None):
-        self.user_id = user_id
-        self.balance = balance
-        self.created_at = created_at
-        self.last_active = last_active
-        self.referral_code = referral_code
-        self.referred_by = referred_by
-        self.is_banned = is_banned
-        self.ban_reason = ban_reason
-        self.ban_until = ban_until
-    
-    def to_dict(self):
-        """تحويل النموذج إلى قاموس"""
-        return {
-            'user_id': self.user_id,
-            'balance': self.balance,
-            'created_at': self.created_at,
-            'last_active': self.last_active,
-            'referral_code': self.referral_code,
-            'referred_by': self.referred_by,
-            'is_banned': self.is_banned,
-            'ban_reason': self.ban_reason,
-            'ban_until': self.ban_until
-        }
+Base = declarative_base()
+engine = create_engine(Config.DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-class Transaction:
-    """نموذج المعاملة"""
+class User(Base):
+    __tablename__ = "users"
     
-    def __init__(self, transaction_id, user_id, type_, amount, payment_method=None,
-                 transaction_id_ext=None, account_number=None, status='pending',
-                 created_at=None, notes=None):
-        self.id = transaction_id
-        self.user_id = user_id
-        self.type = type_
-        self.amount = amount
-        self.payment_method = payment_method
-        self.transaction_id = transaction_id_ext
-        self.account_number = account_number
-        self.status = status
-        self.created_at = created_at
-        self.notes = notes
+    id = Column(Integer, primary_key=True, index=True)
+    telegram_id = Column(BigInteger, unique=True, index=True, nullable=False)
+    username = Column(String(100), nullable=True)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=True)
+    balance = Column(Float, default=0.0)
+    ichancy_account_id = Column(String(100), nullable=True)
+    ichancy_username = Column(String(100), nullable=True)
+    referral_code = Column(String(20), unique=True, nullable=True)
+    referred_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_banned = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    def to_dict(self):
-        """تحويل النموذج إلى قاموس"""
-        return {
-            'id': self.id,
-            'user_id': self.user_id,
-            'type': self.type,
-            'amount': self.amount,
-            'payment_method': self.payment_method,
-            'transaction_id': self.transaction_id,
-            'account_number': self.account_number,
-            'status': self.status,
-            'created_at': self.created_at,
-            'notes': self.notes
-        }
+    # العلاقات
+    transactions = relationship("Transaction", back_populates="user")
+    referrals = relationship("Referral", foreign_keys="Referral.referred_user_id")
+    sent_gifts = relationship("GiftTransaction", foreign_keys="GiftTransaction.sender_id")
 
-class IchancyAccount:
-    """نموذج حساب Ichancy"""
+class Transaction(Base):
+    __tablename__ = "transactions"
     
-    def __init__(self, user_id, username, password, balance=0, created_at=None,
-                 last_login=None):
-        self.user_id = user_id
-        self.username = username
-        self.password = password
-        self.balance = balance
-        self.created_at = created_at
-        self.last_login = last_login
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    transaction_type = Column(String(20), nullable=False)  # deposit, withdraw, gift, bonus
+    amount = Column(Float, nullable=False)
+    fee = Column(Float, default=0.0)
+    net_amount = Column(Float, nullable=False)
+    payment_method = Column(String(50), nullable=True)
+    transaction_code = Column(String(100), nullable=True)  # رقم عملية سيرياتيل/شام
+    status = Column(String(20), default="pending")  # pending, completed, rejected, canceled
+    admin_id = Column(Integer, nullable=True)  # إذا تمت يدوياً
+    auto_verified = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
     
-    def to_dict(self):
-        """تحويل النموذج إلى قاموس"""
-        return {
-            'user_id': self.user_id,
-            'username': self.username,
-            'password': self.password,
-            'balance': self.balance,
-            'created_at': self.created_at,
-            'last_login': self.last_login
-        }
+    # العلاقات
+    user = relationship("User", back_populates="transactions")
 
-class Referral:
-    """نموذج الإحالة"""
+class Referral(Base):
+    __tablename__ = "referrals"
     
-    def __init__(self, referral_id, referrer_id, referred_id, amount_charged=0,
-                 commission_earned=0, is_active=False, created_at=None):
-        self.id = referral_id
-        self.referrer_id = referrer_id
-        self.referred_id = referred_id
-        self.amount_charged = amount_charged
-        self.commission_earned = commission_earned
-        self.is_active = is_active
-        self.created_at = created_at
+    id = Column(Integer, primary_key=True, index=True)
+    referrer_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    referred_user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True)
+    is_active = Column(Boolean, default=False)
+    total_burned = Column(Float, default=0.0)
+    bonus_paid = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
-    def to_dict(self):
-        """تحويل النموذج إلى قاموس"""
-        return {
-            'id': self.id,
-            'referrer_id': self.referrer_id,
-            'referred_id': self.referred_id,
-            'amount_charged': self.amount_charged,
-            'commission_earned': self.commission_earned,
-            'is_active': self.is_active,
-            'created_at': self.created_at
-        }
+    # العلاقات
+    referrer = relationship("User", foreign_keys=[referrer_id])
+    referred_user = relationship("User", foreign_keys=[referred_user_id])
 
-class GiftCode:
-    """نموذج كود الهدية"""
+class GiftCode(Base):
+    __tablename__ = "gift_codes"
     
-    def __init__(self, code, amount, max_uses=1, used_count=0, created_by=None,
-                 created_at=None, expires_at=None):
-        self.code = code
-        self.amount = amount
-        self.max_uses = max_uses
-        self.used_count = used_count
-        self.created_by = created_by
-        self.created_at = created_at
-        self.expires_at = expires_at
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(20), unique=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    created_by = Column(Integer, ForeignKey('users.id'), nullable=False)
+    max_uses = Column(Integer, default=1)
+    used_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class PaymentMethod(Base):
+    __tablename__ = "payment_methods"
     
-    def to_dict(self):
-        """تحويل النموذج إلى قاموس"""
-        return {
-            'code': self.code,
-            'amount': self.amount,
-            'max_uses': self.max_uses,
-            'used_count': self.used_count,
-            'created_by': self.created_by,
-            'created_at': self.created_at,
-            'expires_at': self.expires_at
-        }
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), nullable=False)
+    display_name = Column(String(100), nullable=False)
+    type = Column(String(20), nullable=False)  # deposit, withdraw, both
+    is_active = Column(Boolean, default=True)
+    min_amount = Column(Float, default=0.0)
+    max_amount = Column(Float, default=1000000.0)
+    fee_percentage = Column(Float, default=0.0)
+    fee_fixed = Column(Float, default=0.0)
+    settings = Column(JSON, nullable=True)  # إعدادات خاصة بالطريقة
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class SyriatelCode(Base):
+    __tablename__ = "syriatel_codes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(20), unique=True, nullable=False)
+    current_balance = Column(Float, default=0.0)
+    max_balance = Column(Float, default=5400.0)
+    is_active = Column(Boolean, default=True)
+    last_used = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Bonus(Base):
+    __tablename__ = "bonuses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    bonus_type = Column(String(20), nullable=False)  # normal, conditional
+    percentage = Column(Float, default=0.0)
+    min_amount = Column(Float, default=0.0)
+    payment_method_id = Column(Integer, ForeignKey('payment_methods.id'), nullable=True)
+    is_active = Column(Boolean, default=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class AdminLog(Base):
+    __tablename__ = "admin_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    admin_id = Column(Integer, nullable=False)
+    action_type = Column(String(50), nullable=False)
+    target_id = Column(Integer, nullable=True)
+    details = Column(JSON, nullable=True)
+    ip_address = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class SystemLog(Base):
+    __tablename__ = "system_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    log_level = Column(String(20), nullable=False)
+    module = Column(String(50), nullable=False)
+    message = Column(Text, nullable=False)
+    data = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class GiftTransaction(Base):
+    __tablename__ = "gift_transactions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    receiver_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    amount = Column(Float, nullable=False)
+    fee = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # العلاقات
+    sender = relationship("User", foreign_keys=[sender_id])
+    receiver = relationship("User", foreign_keys=[receiver_id])
+
+# إنشاء الجداول
+def create_tables():
+    Base.metadata.create_all(bind=engine)
+
+# جلسة قاعدة البيانات
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
